@@ -108,3 +108,11 @@ Medical examination recommendation: Top-1 and Top-3 accuracy
 Impact
 
 This system can assist healthcare professionals by supporting early screening of genetic diseases, reducing diagnostic time and cost, guiding patients toward appropriate medical examinations, and improving personalized and preventive healthcare.
+
+---
+
+Chatbot Integration
+
+To make the system easier to use, a chatbot will be added as a user interface. The chatbot allows users to describe their symptoms in simple language. Based on the provided symptoms, the system analyzes the information and predicts whether a genetic disease may be present, identifies the possible disease type, and suggests a suitable medical examination.
+
+This chatbot helps users interact with the system without needing medical or technical knowledge. It supports early awareness and guides users toward appropriate medical evaluation, while not replacing professional healthcare advice.
