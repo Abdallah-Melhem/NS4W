@@ -1,101 +1,205 @@
-Explainable Machine Learning System with Medical Chatbot for Genetic Disease Prediction and Diagnostic Recommendation
+🧬 Genetic Disorder Prediction Chatbot (Local LLM + ML)
 
----
+An interactive web-based chatbot that collects medical information from users through natural conversation, validates missing data, runs a machine-learning prediction model, and explains the result in simple, human-readable language.
 
-## *Problem Description*
+The system runs fully locally using:
 
-Genetic diseases result from complex interactions between hereditary, biological, and prenatal factors. Accurate and early identification requires analyzing multiple clinical indicators with different levels of importance. This project presents an *integrated machine learning system combined with an intelligent medical chatbot* to assist in genetic disease screening, disease classification, and diagnostic guidance.
+Node.js + Express (chat logic & session handling)
 
-The system uses *ranked and weighted clinical and genetic features* to make predictions and provides *interactive explanations and recommendations* through a chatbot interface, improving accessibility and user understanding.
+Ollama (LLaMA 3.2) as a local LLM
 
----
+Flask + CatBoost for machine-learning prediction
 
-## *Objective*
+HTML/CSS/JS frontend chat interface
 
-The goal is to develop a *multi-output supervised machine learning model* with an embedded *medical chatbot* that:
+✨ Key Features
 
-1. Predicts whether an individual has a genetic disease.
-2. Identifies the *type of genetic disease* if present.
-3. Recommends the *best medical examination* for diagnosis or confirmation.
-4. Allows users to interact with the system through a chatbot that explains results and answers medical-related questions.
+💬 Natural conversation with users (free text, any order)
 
----
+🧠 Local LLM (no external APIs, no costs, no data leakage)
 
-## *Ranked Input Features (By Importance)*
+🧾 Automatic extraction of medical values from text
 
-The model relies on features ranked using feature-importance techniques (e.g., SHAP values). Each feature is assigned a *weight* reflecting its contribution to the predictions.
+❓ Smart follow-up questions when data is missing
 
-| Rank | Feature                          | Description                        | Weight    |
-| ---: | -------------------------------- | ---------------------------------- | --------- |
-|    1 | Blood Cell Count (per µL)        | Total blood cell concentration     | *10.10* |
-|    2 | White Blood Cell Count (×10³/µL) | Immune response indicator          | *9.25*  |
-|    3 | Mother’s Age                     | Maternal age at conception         | *8.80*  |
-|    4 | Father’s Age                     | Paternal age at conception         | *8.10*  |
-|    5 | Patient Age                      | Current age of the patient         | *7.60*  |
-|    6 | Genes in Mother’s Side           | Maternal genetic inheritance       | *5.17*  |
-|    7 | Inherited From Father            | Paternal genetic inheritance       | *4.80*  |
-|    8 | Number of Previous Abortions     | Maternal reproductive history      | *4.24*  |
-|    9 | Harmful Substance Abuse          | Exposure to harmful substances     | *3.96*  |
-|   10 | Birth Asphyxia                   | Oxygen deprivation at birth        | *3.92*  |
-|   11 | Paternal Gene Presence           | Identified paternal gene mutations | *3.54*  |
+📊 ML prediction using a trained CatBoost model
 
----
+🧑‍⚕️ Human-friendly explanation of results
 
-## *Outputs*
- *Mitochondrial Genetic Inheritance Disorders
- -Leigh syndrome
+🔁 Session-based chat with status and reset commands
 
- -Mitochondrial myopathy
+🏗️ System Architecture
+Browser (Chat UI)
+      │
+      ▼
+Node.js / Express
+(API + Session + LLM logic)
+      │
+      ├── Ollama (llama3.2)
+      │   └─ Extracts data & humanizes output
+      │
+      └── Flask API (/predict)
+          └─ CatBoost ML model
 
- -Leber's hereditary optic neuropathy (LHON)
+🧠 Required Medical Inputs
 
-*Single-Gene Inheritance Diseases
- -Cystic fibrosis
+Core (required):
 
- -Tay-Sachs disease
+Blood cell count
 
- -Hemochromatosis
+White blood cell count
 
-* Multifactorial Genetic Inheritance Disorders
- -Diabetes
+Patient age
 
- -Alzheimer’s disease
+Mother’s age
 
- -Cancer
+Father’s age
 
----
+Optional:
 
-## *Chatbot Component*
+Genes in mother’s side (yes/no)
 
-The system includes an *AI-powered medical chatbot* that serves as an interactive interface between the user and the model. The chatbot:
+Inherited from father (yes/no)
 
-* Collects patient information in a user-friendly manner
-* Explains prediction results in simple, understandable language
-* Highlights which features most influenced the decision (based on feature weights)
-* Suggests next medical steps and recommended examinations
-* Answers general questions related to genetic diseases (non-diagnostic advice)
+Birth asphyxia (yes/no)
 
-This chatbot improves *usability, transparency, and trust*, especially for non-expert users.
+Substance abuse (yes/no)
 
----
+Paternal gene (yes/no)
 
-## *Machine Learning Approach*
+Number of previous abortions
 
-* *Learning Type:* Multi-output supervised learning
-* *Model Characteristics:* Explainable and feature-weighted
-* *Integration:* Machine learning predictions + chatbot interaction
+The chatbot will automatically ask for anything missing.
 
----
+🛠️ Tech Stack
+Backend
 
-## *Evaluation Metrics*
+Node.js (ES modules)
 
-* Disease Detection: Accuracy, Precision, Recall, F1-score, ROC-AUC
-* Disease Type Classification: Macro F1-score
-* Examination Recommendation: Top-1 / Top-3 accuracy
-* Chatbot Quality: User satisfaction and response clarity
+Express
 
----
+express-session
 
-## *Impact*
+node-fetch
 
-This integrated system supports early genetic disease screening, improves patient understanding through conversational explanations, and assists healthcare professionals in selecting appropriate diagnostic examinations.
+Ollama (local LLM)
+
+ML API
+
+Python
+
+Flask
+
+CatBoost
+
+Pandas / NumPy
+
+Frontend
+
+HTML
+
+CSS
+
+Vanilla JavaScript (Fetch API)
+
+🚀 Setup Instructions
+1️⃣ Install Ollama & Pull Model
+ollama run llama3.2
+
+
+Verify Ollama is running:
+
+http://127.0.0.1:11434
+
+2️⃣ Flask (ML API)
+Install dependencies
+pip install flask flask-cors pandas numpy catboost
+
+Run Flask server
+python app.py
+
+
+Flask will run at:
+
+http://127.0.0.1:5000
+
+
+Health check:
+
+GET /health
+
+3️⃣ Node.js Backend
+Install dependencies
+npm install
+
+Create .env
+PORT=3000
+FLASK_API_URL=http://127.0.0.1:5000
+SESSION_SECRET=your_secret_here
+
+OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2:latest
+
+Start server
+node server.js
+
+
+Node server runs at:
+
+http://localhost:3000
+
+4️⃣ Open the App
+
+Open your browser and go to:
+
+http://localhost:3000
+
+💬 Example Conversation
+
+User:
+
+My age is 20, mom is 45
+
+Bot:
+
+I still need blood cell count, white blood cell count, and father’s age.
+
+User:
+
+blood cells 4.7, white blood cells 7.9, dad 50
+
+Bot:
+
+(Simple explanation of prediction)
+Result:
+• Prediction: X
+• Confidence: Y%
+
+🧪 Useful Commands
+
+status → shows currently collected data
+
+reset → clears the session and starts over
+
+🔒 Privacy & Safety
+
+All processing is local
+
+No data is sent to external servers
+
+No medical advice is given
+
+Results are informational only
+
+📌 Notes
+
+Make sure the CatBoost model was trained with the same feature names and categories.
+
+Ollama must be running before starting Node.js.
+
+If Ollama is slow, the frontend includes request timeouts and error handling.
+
+📄 License
+
+This project is for educational and research purposes.
+Not intended for real medical diagnosis or treatment.

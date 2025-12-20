@@ -1,73 +1,112 @@
 const chatContainer = document.getElementById("chatMessages");
 const userInput = document.getElementById("userInput");
-const sendButton = document.querySelector(".chat-input button");
+const sendButton = document.querySelector("button");
 
 function appendMessage(text, className) {
   const div = document.createElement("div");
-  div.classList.add("message", className);
-  div.textContent = text;
+  div.className = `message ${className}`;
+
+  const safe = String(text ?? "");
+  div.innerHTML = safe.replace(/\n/g, "<br>");
+
   chatContainer.appendChild(div);
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-function setInputDisabled(state) {
-  userInput.disabled = state;
-  sendButton.disabled = state;
+function appendLoadingMessage() {
+  const div = document.createElement("div");
+  div.className = "message bot loading";
+  div.innerHTML =
+    '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+  chatContainer.appendChild(div);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+  return div;
 }
 
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text) return;
 
-  appendMessage(text, "user-message");
+  appendMessage(text, "user");
   userInput.value = "";
-  setInputDisabled(true);
+  sendButton.disabled = true;
 
-  appendMessage("...", "bot-message");
+  const loadingMsg = appendLoadingMessage();
+
+  // Abort if server takes too long (prevents UI freezing)
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30s
 
   try {
-    const resp = await fetch("http://localhost:3000/api/chat", {
+    const resp = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text }),
+      signal: controller.signal
     });
 
-    let data = {};
+    // Try read JSON, but if it fails read text
+    let data = null;
+    let rawText = "";
     try {
       data = await resp.json();
     } catch {
-      data = {};
+      rawText = await resp.text();
     }
 
-    const lastBot = Array.from(chatContainer.querySelectorAll(".bot-message")).pop();
-    if (lastBot && lastBot.textContent === "...") lastBot.remove();
+    loadingMsg.remove();
 
     if (!resp.ok) {
-      appendMessage(data.reply || `Server error (${resp.status}).`, "bot-message");
+      const errMsg =
+        (data && (data.reply || data.error)) ||
+        rawText ||
+        `Server error: ${resp.status}`;
+      appendMessage(`❌ ${errMsg}`, "bot");
       return;
     }
 
-    appendMessage(data.reply || "Sorry, I couldn't process that.", "bot-message");
+    const reply = data?.reply ?? "No response";
+    appendMessage(reply, "bot");
   } catch (err) {
-    const lastBot = Array.from(chatContainer.querySelectorAll(".bot-message")).pop();
-    if (lastBot && lastBot.textContent === "...") lastBot.remove();
+    loadingMsg.remove();
 
-    appendMessage("Network error. Please try again.", "bot-message");
+    if (err.name === "AbortError") {
+      appendMessage(
+        "⏱️ The request took too long. If you're using local LLM, make sure Ollama is running and try again.",
+        "bot"
+      );
+    } else {
+      appendMessage("❌ Network error. Please check if the server is running.", "bot");
+    }
+
     console.error(err);
   } finally {
-    setInputDisabled(false);
+    clearTimeout(timeout);
+    sendButton.disabled = false;
     userInput.focus();
   }
 }
 
 sendButton.addEventListener("click", sendMessage);
+
 userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 });
 
-window.addEventListener("load", () => {
+// Welcome message
+window.onload = () => {
   appendMessage(
-    "Hello! I can help assess possible genetic disorder categories. Share any relevant details (age, parents' ages, lab counts, etc.).",
-    "bot-message"
+    "👋 Welcome to Genetic Disorder Predictor!\n\n" +
+      "You can type naturally (example: “My age is 20, mom 45, dad 50, blood cells 4.7, white blood cells 7.9”).\n\n" +
+      "Required:\n" +
+      "• Blood cell count\n" +
+      "• White blood cell count\n" +
+      "• Patient age\n" +
+      "• Mother's age\n" +
+      "• Father's age\n\n" +
+    "bot"
   );
-});
+};
