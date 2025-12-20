@@ -1,0 +1,80 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier
+import warnings
+
+warnings.filterwarnings("ignore")
+
+app = Flask(__name__)
+CORS(app)
+
+MODEL_PATH = "catboost_final_model.cbm"
+model = CatBoostClassifier()
+model.load_model(MODEL_PATH)
+
+FEATURE_ORDER = [
+    "blood_cell_count_mcl",
+    "white_blood_cell_count_thousand_per_microliter",
+    "mothers_age",
+    "fathers_age",
+    "patient_age",
+    "genes_in_mothers_side",
+    "inherited_from_father",
+    "no_of_previous_abortion",
+    "ho_substance_abuse",
+    "birth_asphyxia",
+    "paternal_gene"
+]
+
+CORE_FEATURES = [
+    "blood_cell_count_mcl",
+    "white_blood_cell_count_thousand_per_microliter",
+    "patient_age",
+    "mothers_age",
+    "fathers_age"
+]
+
+OPTIONAL_DEFAULTS = {
+    "genes_in_mothers_side": "unknown",
+    "inherited_from_father": "unknown",
+    "paternal_gene": "unknown",
+    "birth_asphyxia": "unknown",
+    "ho_substance_abuse": "unknown",
+    "no_of_previous_abortion": 0
+}
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    missing_core = [f for f in CORE_FEATURES if f not in data]
+    if missing_core:
+        return jsonify({"error": "Missing core features", "missing": missing_core}), 400
+
+    used_imputation = False
+    for feature, default in OPTIONAL_DEFAULTS.items():
+        if feature not in data:
+            data[feature] = default
+            used_imputation = True
+
+    input_df = pd.DataFrame([[data.get(f, np.nan) for f in FEATURE_ORDER]], columns=FEATURE_ORDER)
+
+    try:
+        pred = model.predict(input_df)[0]
+        proba = model.predict_proba(input_df)[0]
+        confidence = float(np.max(proba))
+    except Exception as e:
+        return jsonify({"error": "Model prediction failed", "details": str(e)}), 500
+
+    return jsonify({
+        "prediction": str(pred),
+        "confidence": round(confidence, 3),
+        "imputed": used_imputation
+    })
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=True)

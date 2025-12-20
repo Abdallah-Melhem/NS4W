@@ -1,98 +1,162 @@
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 dotenv.config();
 
-import express from 'express';
-import cors from 'cors';
-import OpenAI from 'openai';
-import fetch from 'node-fetch';
-
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import OpenAI from "openai";
+import session from "express-session";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const ML_API_URL = process.env.ML_API_URL || 'http://localhost:5000/predict';
+/* ===================== SESSION ===================== */
+app.use(
+  session({
+    secret: "genetic-chat-secret",
+    resave: false,
+    saveUninitialized: true
+  })
+);
 
-async function callOpenAI(messages, model = 'gpt-4o-mini') {
-  const response = await openai.chat.completions.create({
-    model,
-    messages
-  });
-  const content = response.choices?.[0]?.message?.content ?? '';
-  return content;
+/* ===================== CONFIG ===================== */
+const PORT = process.env.PORT || 3000;
+const FLASK_API_URL = process.env.FLASK_API_URL;
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
+
+const client = new OpenAI({
+  baseURL: "https://integrate.api.nvidia.com/v1",
+  apiKey: NVIDIA_API_KEY
+});
+
+/* ===================== STATIC FRONTEND ===================== */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use(express.static(path.join(__dirname, "../frontend")));
+
+/* ===================== FEATURES ===================== */
+const CORE_FEATURES = [
+  "patient_age",
+  "mothers_age",
+  "fathers_age",
+  "blood_cell_count_mcl",
+  "white_blood_cell_count_thousand_per_microliter"
+];
+
+const FEATURE_LABELS = {
+  patient_age: "your age",
+  mothers_age: "your mother’s age",
+  fathers_age: "your father’s age",
+  blood_cell_count_mcl: "blood cell count",
+  white_blood_cell_count_thousand_per_microliter: "white blood cell count"
+};
+
+const disorderExamples = {
+  "mitochondrial genetic inheritance disorders": [
+    "Leigh syndrome",
+    "Mitochondrial myopathy",
+    "Leber’s hereditary optic neuropathy"
+  ],
+  "single-gene inheritance diseases": [
+    "Cystic fibrosis",
+    "Tay-Sachs disease",
+    "Hemochromatosis"
+  ],
+  "multifactorial genetic inheritance disorders": [
+    "Diabetes",
+    "Alzheimer’s disease",
+    "Cancer"
+  ]
+};
+
+/* ===================== HELPERS ===================== */
+function safeJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : null;
+  }
 }
 
-app.post('/api/chat', async (req, res) => {
+function isMissing(v) {
+  return v === undefined || v === null || v === "";
+}
+
+/* ===================== CHAT ===================== */
+app.post("/api/chat", async (req, res) => {
   try {
-    const userInput = (req.body?.message || '').toString().trim();
-    if (!userInput) return res.json({ reply: "Please enter a message." });
+    const message = req.body?.message;
+    if (!message) return res.json({ reply: "Please type a message." });
 
-    const relevancePrompt = [
-      { role: 'system', content: 'You are a medical assistant. Classify user input as "Relevant" if it mentions symptoms, medical issues, or health concerns, or "Irrelevant" otherwise. Respond ONLY with the single word Relevant or Irrelevant.' },
-      { role: 'user', content: userInput }
-    ];
+    // Initialize session memory
+    if (!req.session.data) req.session.data = {};
 
-    const relevanceText = await callOpenAI(relevancePrompt);
-    const relevance = relevanceText.split('\n')[0].trim().replace(/["'.]/g, '');
+    /* ===== EXTRACT FEATURES ===== */
+    const extractionPrompt = `
+Extract medical data from text.
+If greeting → {"type":"smalltalk"}
+Else → {"type":"medical","data":{...}}
 
-    if (relevance.toLowerCase() !== 'relevant') {
-      const greetings = ['hi','hello','hey','thanks','thank you'];
-      const lowerInput = userInput.toLowerCase();
-      const isGreeting = greetings.some(g => lowerInput.includes(g));
-      if (isGreeting) {
-        return res.json({ reply: "Hello! I'm your AI assistant. I can help with health concerns and symptom analysis. Please tell me if you have any symptoms." });
-      } else {
-        return res.json({ reply: "I'm here to help with health-related questions. Please describe any symptoms or medical concerns you have." });
-      }
-    }
+Text: "${message}"
+`;
 
-    const extractPrompt = [
-      { role: 'system', content: 'You extract medical symptoms, signs, and short risk phrases from user text. Return ONLY a JSON array of strings (e.g. [\"fatigue\",\"jaundice\"]) with no extra commentary.' },
-      { role: 'user', content: userInput }
-    ];
-
-    const extractText = await callOpenAI(extractPrompt);
-    let symptoms = [];
-    try {
-      const firstJson = extractText.trim().match(/\[.*\]/s);
-      const jsonText = firstJson ? firstJson[0] : extractText;
-      symptoms = JSON.parse(jsonText);
-      if (!Array.isArray(symptoms)) symptoms = [];
-    } catch (err) {
-      symptoms = [];
-    }
-
-    const payload = { symptoms, raw_text: userInput };
-    const mlResp = await fetch(ML_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const extraction = await client.chat.completions.create({
+      model: "openai/gpt-oss-20b",
+      messages: [{ role: "user", content: extractionPrompt }],
+      temperature: 0
     });
 
-    if (!mlResp.ok) {
-      const text = await mlResp.text().catch(() => '');
-      console.error('ML server error:', mlResp.status, text);
-      return res.json({ reply: "Sorry, the prediction service is currently unavailable. Please try again later." });
+    const parsed = safeJsonParse(extraction.choices[0].message.content);
+
+    if (!parsed || parsed.type === "smalltalk") {
+      return res.json({
+        reply: "Hi! You can share your age, parents’ ages, and blood test values."
+      });
     }
 
-    const mlData = await mlResp.json();
+    // MERGE DATA INTO SESSION
+    Object.entries(parsed.data || {}).forEach(([k, v]) => {
+      if (!isMissing(v)) req.session.data[k] = v;
+    });
 
-    let humanized = '';
-    if (!mlData || mlData.disease_present === false) {
-      humanized = "Based on the information provided, the system does not identify a likely genetic disease. If you are worried or symptoms persist, please consult a healthcare professional.";
-    } else {
-      const type = mlData.disease_type || 'a genetic condition';
-      const test = mlData.recommended_test || 'further medical evaluation';
-      humanized = `The system indicates a possible ${type}. Recommended next step: ${test}. This is not a diagnosis—please consult a qualified healthcare professional for confirmation.`;
+    /* ===== CHECK MISSING ===== */
+    const missing = CORE_FEATURES.filter(f => isMissing(req.session.data[f]));
+
+    if (missing.length > 0) {
+      return res.json({
+        reply: `Thanks. I still need: ${missing.map(m => FEATURE_LABELS[m]).join(", ")}.`
+      });
     }
 
-    return res.json({ reply: humanized, raw_ml: mlData, extracted_symptoms: symptoms });
-  } catch (error) {
-    console.error('Server error:', error);
-    return res.json({ reply: "An error occurred while processing your request. Please try again." });
+    /* ===== CALL FLASK ===== */
+    const flaskResp = await fetch(`${FLASK_API_URL}/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.session.data)
+    });
+
+    const result = await flaskResp.json();
+
+    const examples = disorderExamples[result.prediction] || [];
+
+    return res.json({
+      reply:
+        `Based on the information provided, the model suggests **${result.prediction}**.\n` +
+        `This may include conditions such as ${examples.join(", ")}.\n\n` +
+        `This is not a diagnosis. Please consult a medical professional.`
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.json({ reply: "Something went wrong." });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Node server running on port ${PORT}`));
+/* ===================== START ===================== */
+app.listen(PORT, () =>
+  console.log(`✅ Server running at http://localhost:${PORT}`)
+);
